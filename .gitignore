@@ -1,0 +1,22 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+*.apk
+*.aab
+
+# Native build artifacts
+app/.cxx/
+app/build/
+
+# Model files (bundled at build time from scripts/download_models.sh)
+app/src/main/assets/models/*.gguf
+
+# llama.cpp submodule build output
+third_party/llama.cpp/build*/
