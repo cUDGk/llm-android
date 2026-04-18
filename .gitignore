@@ -20,3 +20,8 @@ app/src/main/assets/models/*.gguf
 
 # llama.cpp submodule build output
 third_party/llama.cpp/build*/
+
+# Native build output (regenerated via scripts/build_llama_android.sh)
+app/src/main/assets/bin/llama-server
+app/src/main/jniLibs/
+
