@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # llama.cpp を Android (arm64-v8a) 向けに cross-compile する。
-# 目的: arm64-v8a の `llama-server` 実行ファイル + 必要な .so を生成し、
-#       app/src/main/assets/bin/ と app/src/main/jniLibs/arm64-v8a/ に配置する。
+# 目的: arm64-v8a の llama-server + 必要な .so を app/src/main/jniLibs/arm64-v8a/
+#       に配置する。llama-server 実行ファイルは libllama-server.so という名前で
+#       jniLibs に入れる (W^X の都合で nativeLibraryDir 配下しか exec できないため)。
 #
 # 使い方 (Git Bash / MSYS2):
 #   ./scripts/build_llama_android.sh
@@ -27,7 +28,6 @@ NINJA_BIN="$ANDROID_SDK/cmake/3.31.6/bin/ninja.exe"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 
 BUILD="$SRC/build-android-$ABI"
-OUT_BIN_DIR="$ROOT/app/src/main/assets/bin"
 OUT_LIB_DIR="$ROOT/app/src/main/jniLibs/$ABI"
 
 echo "==> src=$SRC"
@@ -76,10 +76,11 @@ mkdir -p "$BUILD" "$OUT_BIN_DIR" "$OUT_LIB_DIR"
 # ------------------------------------------------------------------
 echo "==> collecting artifacts"
 
-# llama-server 本体 (実行ファイル)
+# llama-server 本体: lib*.so の命名で jniLibs に配置 (APK install 時に抽出され
+# nativeLibraryDir/libllama-server.so として exec 可能になる)。
 SERVER_BIN="$(find "$BUILD" -maxdepth 4 -type f -name 'llama-server' | head -1)"
 [[ -n "$SERVER_BIN" ]] || { echo "llama-server binary not found"; exit 1; }
-cp -v "$SERVER_BIN" "$OUT_BIN_DIR/llama-server"
+cp -v "$SERVER_BIN" "$OUT_LIB_DIR/libllama-server.so"
 
 # 共有ライブラリ群
 # Android は jniLibs/<abi>/ に置けば System.loadLibrary で解決できる。
@@ -97,6 +98,5 @@ if [[ -f "$LIBCXX" ]]; then
 fi
 
 echo "==> done"
-echo "server bin : $OUT_BIN_DIR/llama-server"
 echo "jniLibs    : $OUT_LIB_DIR/"
 ls -lh "$OUT_LIB_DIR/" | head -20

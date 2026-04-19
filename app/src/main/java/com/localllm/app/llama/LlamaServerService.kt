@@ -19,9 +19,10 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
- * llama-server プロセスを抱えておく Foreground Service。
- * 本体ロジックは LlamaServerManager 側。Service の責務はそのライフサイクル見守り
- * (プロセス kill されるのを OS から守る) と通知の表示のみ。
+ * アプリをフォアグラウンド扱いにして、推論中に OS から殺されにくくする。
+ * 旧実装では llama-server を子プロセスで spawn/監視していたが、Android 12+ の
+ * phantom-process-killer で定期的に kill されるため、JNI in-process 方式に移行。
+ * 本サービスは通知の維持と LLMEngine の state 表示のみを担当する。
  */
 class LlamaServerService : Service() {
 
@@ -32,7 +33,7 @@ class LlamaServerService : Service() {
         super.onCreate()
         startAsForeground(status = "starting")
         watchJob = scope.launch {
-            LlamaServerManager.state.collectLatest { state ->
+            LLMEngine.state.collectLatest { state ->
                 updateNotification(stateText(state))
             }
         }
@@ -41,8 +42,9 @@ class LlamaServerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                // 明示停止: JNI engine を unload してサービス終了
                 scope.launch {
-                    LlamaServerManager.stop()
+                    LLMEngine.unloadModel()
                     stopSelf()
                 }
             }
@@ -52,9 +54,6 @@ class LlamaServerService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        scope.launch {
-            LlamaServerManager.stop()
-        }
         watchJob?.cancel()
     }
 
@@ -101,11 +100,15 @@ class LlamaServerService : Service() {
             .build()
     }
 
-    private fun stateText(state: ServerState): String = when (state) {
-        is ServerState.Stopped -> "stopped"
-        is ServerState.Starting -> "starting…"
-        is ServerState.Running -> "running: ${state.config.modelFileName}"
-        is ServerState.Error -> "error: ${state.message}"
+    private fun stateText(state: LLMEngine.State): String = when (state) {
+        LLMEngine.State.Uninitialized -> "idle"
+        LLMEngine.State.Initializing  -> "initializing…"
+        LLMEngine.State.Initialized   -> "initialized"
+        LLMEngine.State.LoadingModel  -> "loading model…"
+        LLMEngine.State.ModelReady    -> "ready"
+        LLMEngine.State.Processing    -> "processing prompt…"
+        LLMEngine.State.Generating    -> "generating…"
+        is LLMEngine.State.Error      -> "error: ${state.message}"
     }
 
     companion object {

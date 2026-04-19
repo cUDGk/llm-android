@@ -6,44 +6,23 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * assets/ 配下の実行ファイル・モデルを filesDir/ へ展開する。
+ * assets/models/ の GGUF を filesDir/models/ へ展開する。
  *
- * なぜ展開が必要か:
- *  - assets 配下のファイルは APK 内 (読み取り専用) に置かれ、直接 exec() できない。
- *  - Android は jniLibs/ の .so を `/data/app/<pkg>/lib/arm64/` に自動展開するが、
- *    実行ファイル (llama-server) は対象外。自前でコピーして chmod 700 する。
- *  - モデルも同様。mmap 可能な実ファイルパスが必要。
+ * llama-server バイナリは jniLibs に libllama-server.so として同梱し、
+ * Android が nativeLibraryDir に自動配置する (W^X の制約で、exec 可能なのは
+ * nativeLibraryDir 配下だけ)。モデルは mmap 用に実ファイルパスが必要。
  *
  * 冪等性: 展開済みなら再コピーしない (dest が存在し、0 バイトでない事を確認)。
- * APK 更新時は VersionCode を見て binary だけ強制再展開する。
  */
 object AssetExtractor {
     private const val TAG = "AssetExtractor"
-    private const val MARKER_FILE = ".extracted"
 
     data class ExtractResult(
-        val serverBin: File,
         val modelsDir: File,
     )
 
     fun extract(context: Context): ExtractResult {
-        val binDir = File(context.filesDir, "bin").apply { mkdirs() }
         val modelsDir = File(context.filesDir, "models").apply { mkdirs() }
-
-        val versionCode = context.packageManager
-            .getPackageInfo(context.packageName, 0).longVersionCode
-        val marker = File(binDir, MARKER_FILE)
-        val needBinaryExtract = !marker.exists() ||
-            marker.readText().trim().toLongOrNull() != versionCode
-
-        val serverBin = File(binDir, "llama-server")
-        if (needBinaryExtract || !serverBin.exists() || serverBin.length() == 0L) {
-            copyAsset(context, "bin/llama-server", serverBin)
-            if (!serverBin.setExecutable(true, /* ownerOnly = */ true)) {
-                Log.w(TAG, "setExecutable(true) failed for ${serverBin.path}")
-            }
-            marker.writeText(versionCode.toString())
-        }
 
         val modelsList = context.assets.list("models").orEmpty()
         for (name in modelsList) {
@@ -56,7 +35,7 @@ object AssetExtractor {
             copyAsset(context, "models/$name", dest)
         }
 
-        return ExtractResult(serverBin = serverBin, modelsDir = modelsDir)
+        return ExtractResult(modelsDir = modelsDir)
     }
 
     private fun copyAsset(context: Context, assetPath: String, dest: File) {

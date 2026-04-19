@@ -43,13 +43,15 @@ class SettingsRepository(private val context: Context) {
     }
 
     private fun Preferences.toConfig(): LlamaServerConfig {
-        val main = this[SettingsKeys.MAIN_MODEL] ?: BundledModels.QWEN3_4B_INSTRUCT
-        val draftRaw = this[SettingsKeys.DRAFT_MODEL] ?: BundledModels.QWEN3_0_6B_DRAFT
+        // 8GB端末では 0.6B 単独 + ctx 2048 + draft 無効 が速度/安定性の最適点。
+        // 4B + speculative は目標(~30 tok/s)に遠く、OSの phantom-process-kill を誘発しやすい。
+        val main = this[SettingsKeys.MAIN_MODEL] ?: BundledModels.QWEN25_0_5B
+        val draftRaw = this[SettingsKeys.DRAFT_MODEL] ?: ""
         val draft = if (draftRaw.isBlank()) null else draftRaw
         return LlamaServerConfig(
             modelFileName = main,
             draftModelFileName = draft,
-            contextSize = this[SettingsKeys.CONTEXT_SIZE] ?: 4096,
+            contextSize = this[SettingsKeys.CONTEXT_SIZE] ?: 2048,
             threads = this[SettingsKeys.THREADS] ?: 4,
             flashAttention = this[SettingsKeys.FLASH_ATTENTION] ?: true,
             draftMax = this[SettingsKeys.DRAFT_MAX] ?: 8,

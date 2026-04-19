@@ -44,7 +44,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val config by viewModel.config.collectAsStateWithLifecycle()
-    val serverState by viewModel.serverState.collectAsStateWithLifecycle()
+    val engineState by viewModel.engineState.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -77,66 +77,16 @@ fun SettingsScreen(
                 onSelect = { v -> viewModel.update { it.copy(modelFileName = v) } },
             )
 
-            ModelDropdown(
-                label = "Draft (speculative decoding, optional)",
-                selected = cfg.draftModelFileName ?: "",
-                options = viewModel.draftModels,
-                displayFor = { if (it.isEmpty()) "— disabled —" else it },
-                onSelect = { v ->
-                    viewModel.update {
-                        it.copy(draftModelFileName = v.ifEmpty { null })
-                    }
-                },
-            )
-
-            SectionHeader("Runtime")
-
-            SliderRow(
-                label = "Context size",
-                value = cfg.contextSize.toFloat(),
-                min = 512f,
-                max = 8192f,
-                step = 512,
-                formatter = { "${it.toInt()} tokens" },
-                onChange = { viewModel.update { c -> c.copy(contextSize = it.toInt()) } },
-            )
-
-            SliderRow(
-                label = "Threads",
-                value = cfg.threads.toFloat(),
-                min = 1f,
-                max = 8f,
-                step = 1,
-                formatter = { it.toInt().toString() },
-                onChange = { viewModel.update { c -> c.copy(threads = it.toInt()) } },
-            )
-
-            SliderRow(
-                label = "Draft max",
-                value = cfg.draftMax.toFloat(),
-                min = 1f,
-                max = 16f,
-                step = 1,
-                formatter = { it.toInt().toString() },
-                onChange = { viewModel.update { c -> c.copy(draftMax = it.toInt()) } },
-            )
-
-            SwitchRow(
-                label = "Flash Attention",
-                checked = cfg.flashAttention,
-                onChange = { v -> viewModel.update { it.copy(flashAttention = v) } },
-            )
-
             SectionHeader("Actions")
 
             Button(
                 onClick = { viewModel.applyAndRestart() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Apply and restart server")
+                Text("Apply (reload model)")
             }
             Text(
-                text = "state: $serverState",
+                text = "engine: $engineState",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -20,6 +20,22 @@ android {
         ndk {
             abiFilters += "arm64-v8a"
         }
+
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                )
+                cppFlags += "-std=c++17"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.31.6"
+        }
     }
 
     buildTypes {
@@ -42,7 +58,9 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = false
+            // CMake でビルドした .so を install 時に実ファイルとして展開させる
+            // (mmap ではなく dlopen / System.loadLibrary から使うため念のため抽出)。
+            useLegacyPackaging = true
         }
         resources {
             excludes += setOf(
@@ -66,8 +84,8 @@ android {
         buildConfig = true
     }
 
-    // llama-server は事前ビルドしたバイナリを assets/bin に配置する
-    // (CMake からは libllama.so 等の .so のみ扱う想定、実行ファイルは assets 経由)
+    // llama.cpp は CMake で直接リンクし、JNI in-process 推論する方式 (externalNativeBuild 経由)。
+    // 旧: llama-server を子プロセスで spawn → Android 12+ の phantom-process-killer に殺される。
 }
 
 dependencies {
@@ -89,11 +107,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
-
-    implementation(libs.ktor.client.core)
-    implementation(libs.ktor.client.okhttp)
-    implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.serialization.kotlinx.json)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

@@ -16,8 +16,12 @@ mkdir -p "$DEST"
 # Unsloth の GGUF ミラー (公式 Qwen GGUF リポは現在 gated)
 # size は HEAD で取った Content-Length (bytes)
 declare -a MODELS=(
-    "Qwen3-4B-Instruct-2507-Q4_K_M.gguf|https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf|2497281120"
+    # 4B は 2.4GB で AGP の単一 asset 上限 (2GB) を越えるため、llama-gguf-split で
+    # 事前に 2 分割した gguf のみをコミット。llama.cpp が 00001 を開けば後続を自動でロードする。
+    # このスクリプトでダウンロードする必要はない (既にリポに入っている)。
     "Qwen3-0.6B-Q4_K_M.gguf|https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf|396705472"
+    # Q4_0 は KleidiAI の ARM 最適化 matmul が効くので、対応 CPU では Q4_K_M より速い
+    "Qwen3-0.6B-Q4_0.gguf|https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_0.gguf|382156480"
 )
 
 for entry in "${MODELS[@]}"; do

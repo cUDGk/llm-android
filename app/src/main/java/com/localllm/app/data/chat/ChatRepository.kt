@@ -1,105 +1,55 @@
 package com.localllm.app.data.chat
 
-import android.util.Log
-import com.localllm.app.llama.LlamaServerManager
-import kotlinx.coroutines.Dispatchers
+import com.localllm.app.llama.LLMEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 /**
- * llama-server の OpenAI 互換 /v1/chat/completions を叩く。
- * SSE ストリーミング (`data: ...\n\n` 形式) を行単位で読み進めながら、
- * [StreamEvent] の Flow として UI に流す。
+ * LLMEngine (JNI in-process llama.cpp) をチャット UI 向けに薄くラップする。
+ * 旧 HTTP 経路は Android 12+ の phantom-process-kill 問題で廃止。
+ *
+ * ai_chat.cpp 側が chat_template + KV cache を保持するので、履歴全体を
+ * 送り直す必要はなく、最新の user 発話だけを渡せば自動的に会話が続く。
  */
-class ChatRepository(
-    private val baseUrlProvider: () -> String = { LlamaServerManager.baseUrl },
-) {
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS) // streaming なので無制限
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        coerceInputValues = true
-    }
+class ChatRepository {
 
     fun streamChat(
         messages: List<ChatMessageDto>,
-        temperature: Double = 0.7,
-        maxTokens: Int = 1024,
-        cachePrompt: Boolean = true,
+        maxTokens: Int = 512,
+        noThink: Boolean = true,
     ): Flow<StreamEvent> = flow {
-        val payload = ChatCompletionRequest(
-            messages = messages,
-            stream = true,
-            temperature = temperature,
-            max_tokens = maxTokens,
-            cache_prompt = cachePrompt,
-        )
-        val body = json.encodeToString(ChatCompletionRequest.serializer(), payload)
-            .toRequestBody("application/json".toMediaType())
-        val url = "${baseUrlProvider()}/v1/chat/completions"
-        val req = Request.Builder()
-            .url(url)
-            .post(body)
-            .header("Accept", "text/event-stream")
-            .build()
-
-        val resp = client.newCall(req).execute()
-        try {
-            if (!resp.isSuccessful) {
-                emit(StreamEvent.Error("HTTP ${resp.code}: ${resp.message}"))
-                return@flow
-            }
-            val source = resp.body?.source()
-            if (source == null) {
-                emit(StreamEvent.Error("empty body"))
-                return@flow
-            }
-            var lastTimings: TimingsDto? = null
-            var done = false
-            while (!done && !source.exhausted()) {
-                val line = source.readUtf8Line() ?: break
-                if (line.isBlank()) continue
-                if (!line.startsWith("data:")) continue
-                val payloadLine = line.removePrefix("data:").trim()
-                if (payloadLine == "[DONE]") {
-                    done = true
-                    continue
-                }
-                val chunk = try {
-                    json.decodeFromString(ChatStreamChunk.serializer(), payloadLine)
-                } catch (e: Throwable) {
-                    Log.w(TAG, "parse failed: $payloadLine", e)
-                    continue
-                }
-                val delta = chunk.choices.firstOrNull()?.delta?.content
-                if (!delta.isNullOrEmpty()) {
-                    emit(StreamEvent.Token(delta))
-                }
-                chunk.timings?.let { lastTimings = it }
-                val finish = chunk.choices.firstOrNull()?.finish_reason
-                if (!finish.isNullOrEmpty()) {
-                    done = true
-                }
-            }
-            emit(StreamEvent.Done(lastTimings))
-        } finally {
-            resp.close()
+        val userText = messages.lastOrNull { it.role == "user" }?.content.orEmpty()
+        if (userText.isBlank()) {
+            emit(StreamEvent.Error("empty user prompt"))
+            return@flow
         }
-    }.flowOn(Dispatchers.IO)
-
-    companion object {
-        private const val TAG = "ChatRepository"
+        // /no_think は Qwen3 の thinking モードをスキップする公式指示子。
+        // 非 Qwen3 モデルではただの文字列として扱われてしまうので、ロード中の
+        // モデルファイル名を見て Qwen3 系のときだけ付ける。
+        val currentModel = LLMEngine.loadedModel.value ?: ""
+        val isQwen3Thinking = currentModel.contains("Qwen3", ignoreCase = true)
+        val prompt = if (noThink && isQwen3Thinking) "/no_think\n$userText" else userText
+        val startedAt = System.currentTimeMillis()
+        var tokenCount = 0
+        try {
+            LLMEngine.generate(prompt, predictLength = maxTokens).collect { token ->
+                tokenCount++
+                emit(StreamEvent.Token(token))
+            }
+            val ms = (System.currentTimeMillis() - startedAt).coerceAtLeast(1L)
+            val tps = tokenCount * 1000.0 / ms
+            emit(
+                StreamEvent.Done(
+                    TimingsDto(
+                        predicted_n = tokenCount,
+                        predicted_ms = ms.toDouble(),
+                        predicted_per_second = tps,
+                    )
+                )
+            )
+        } catch (e: Throwable) {
+            emit(StreamEvent.Error(e.message ?: "generation failed"))
+        }
     }
 }
 
