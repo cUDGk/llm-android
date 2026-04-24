@@ -135,6 +135,6 @@ Xiaomi 13T, CPU のみ, 4 threads, Q4_0, FA auto:
 - [`cUDGk/drift`](https://github.com/cUDGk/drift) — このプロジェクトの上位互換コンセプト。階層化メモリ・キャラクター管理・完全ローカル設計の構想リポ。本リポはそのうちの「llama.cpp を Android で動かす」部分の現実可動コード。
 - [`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp) — 推論コア。`examples/llama.android/` の JNI 実装を土台にしている。
 
-## License
+## ライセンス
 
 MIT
